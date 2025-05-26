@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skin Disease Detection</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; }
+        .container { width: 50%; margin: 50px auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+        h1 { color: #333; }
+        form { margin: 20px 0; }
+        input[type="file"] { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        button { padding: 10px 15px; border: none; background: #28a745; color: white; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #218838; }
+        img { max-width: 100%; margin-top: 20px; border-radius: 5px; }
+        p { font-size: 18px; color: #333; }
+        .error { color: red; }
+        .recommend-btn { margin-top: 10px; background: #007bff; }
+        #chatbox {
+            width: 100%;
+            min-height: 100px; /* Minimum height for the chatbox */
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 14px; /* Reduced text size */
+            background: #f9f9f9; /* Light background for chatbox */
+            border-radius: 8px; /* Rounded corners */
+            overflow: hidden; /* Hide internal scrollbar */
+        }
+        #chatbox div {
+            margin-bottom: 15px; /* Increased spacing between messages */
+        }
+        #chatbox .user {
+            color: black; /* User message text color */
+            background-color: #e0e0e0; /* Light gray background */
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%; /* Limit message width */
+            margin-left: auto; /* Align to the right */
+        }
+        #chatbox .gemini {
+            color: black; /* Gemini message text color */
+            background-color: white; /* White background */
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%; /* Limit message width */
+            margin-right: auto; /* Align to the left */
+        }
+        #chatbox strong {
+            display: block; /* Ensure sender name is on a new line */
+            margin-bottom: 5px; /* Spacing between sender name and message */
+            font-weight: bold; /* Bold heading */
+        }
+        #chatbox .content {
+            margin-left: 20px; /* Indent content slightly to the right */
+        }
+        #chatInput {
+            width: 80%;
+            padding: 10px;
+            margin-top: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            resize: none; /* Disable manual resizing */
+            overflow: hidden; /* Hide scrollbar */
+            min-height: 40px; /* Minimum height */
+            max-height: 200px; /* Maximum height before scrolling */
+            line-height: 1.5; /* Line spacing */
+        }
+        #sendChatBtn {
+            padding: 10px 15px;
+            border: none;
+            background: #28a745;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #sendChatBtn:hover {
+            background: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Skin Disease Detection</h1>
+        <form action="/" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" accept="image/*" required>
+            <button type="submit">Upload & Predict</button>
+        </form>
+
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+
+        {% if file_path %}
+            <h2>Prediction Result</h2>
+            <img src="{{ file_path }}" alt="Uploaded Image">
+            <p><strong>Disease:</strong> {{ prediction }}</p>
+            <p><strong>Confidence:</strong> {{ confidence|round(2) }}%</p>
+            <button class="recommend-btn" onclick="getRecommendation('{{ prediction }}')">Get Recommendation</button>
+        {% endif %}
+
+        <!-- Single Chatbox for Recommendations and Chat Messages -->
+        <div id="chatbox"></div>
+        <textarea id="chatInput" placeholder="Type your message here..." rows="1"></textarea>
+        <button id="sendChatBtn" onclick="sendChatMessage()">Send</button>
+    </div>
+    
+    <script>
+        // Generate a unique session ID for each user
+        const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+        // Function to auto-expand the textarea as the user types
+        const chatInput = document.getElementById("chatInput");
+        chatInput.addEventListener("input", () => {
+            chatInput.style.height = "auto"; // Reset height
+            chatInput.style.height = chatInput.scrollHeight + "px"; // Expand to fit content
+        });
+
+        function getRecommendation(disease) {
+            fetch("/recommend", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ disease: disease })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Add the recommendation to the chatbox
+                appendMessage("gemini", data.recommendation);
+            })
+            .catch(error => console.error("Error:", error));
+        }
+
+        function sendChatMessage() {
+            const chatInput = document.getElementById("chatInput");
+            const message = chatInput.value.trim();
+            if (message === "") return;
+
+            // Add user message to chatbox
+            appendMessage("user", message);
+
+            // Send message to Flask backend with session ID
+            fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: message, session_id: sessionId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Add Gemini's response to chatbox
+                appendMessage("gemini", data.response);
+            })
+            .catch(error => console.error("Error:", error));
+
+            // Clear input field and reset height
+            chatInput.value = "";
+            chatInput.style.height = "auto";
+        }
+
+        function appendMessage(sender, message) {
+            const chatbox = document.getElementById("chatbox");
+            const messageElement = document.createElement("div");
+            messageElement.classList.add(sender); // Add class for styling (user or gemini)
+
+            // Format the message with proper spacing and indentation
+            const formattedMessage = message
+                .split("\n") // Split by newlines
+                .map(line => line.trim()) // Trim each line
+                .filter(line => line.length > 0) // Remove empty lines
+                .join("<br>"); // Join lines with <br> for proper spacing
+
+            messageElement.innerHTML = `
+                <strong>${sender}:</strong>
+                <div class="content">${formattedMessage}</div>
+            `;
+
+            chatbox.appendChild(messageElement);
+
+            // Expand the chatbox height dynamically
+            chatbox.style.height = "auto"; // Reset height to auto
+            chatbox.style.height = chatbox.scrollHeight + "px"; // Set height to fit content
+
+            // Scroll the entire page to the bottom
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+    </script>
+</body>
+</html>
